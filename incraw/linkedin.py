@@ -19,23 +19,33 @@ from .inputs import profile_url, slug_from_url
 LOGIN_URL = "https://www.linkedin.com/login"
 FEED_URL = "https://www.linkedin.com/feed/"
 
-# Class names are generated and change constantly; data-view-name attributes
-# and the page title are what stays put (2026 layout: name is an h2, the
-# photo's alt is empty). The older h1 / .text-body-medium layout is kept as a
-# fallback.
-TOP_CARD = '[data-view-name="profile-top-card"]'
-PROFILE_READY = f'{TOP_CARD}, main h1'
+# Class names are generated and change constantly. What stays put is the
+# page title (2026 layout: the name is an h2 matching it, the photo's alt is
+# empty). data-view-name markers help when present, but some render paths
+# (e.g. arriving from search) omit them all. The older h1 layout is a fallback.
+_FIND_TOP_JS = """
+  const main = document.querySelector('main') || document.body;
+  const titleName = (document.title || '').split(' | ')[0].replace(/^\\(\\d+\\)\\s*/, '').trim();
+  const nameEl = [...main.querySelectorAll('h1, h2')].find(h => h.innerText.trim() === titleName)
+              || main.querySelector('h1');
+  let top = main.querySelector('[data-view-name="profile-top-card"]');
+  if (!top && nameEl) {
+    // widest ancestor of the name that holds no other section heading
+    top = nameEl;
+    while (top.parentElement && top.parentElement !== main
+           && top.parentElement.querySelectorAll('h1, h2').length <= 1) top = top.parentElement;
+  }
+"""
+
+PROFILE_READY_JS = "() => {" + _FIND_TOP_JS + " return !!top; }"
 
 EXTRACT_PROFILE_JS = """
-() => {
-  const main = document.querySelector('main') || document.body;
-  const h1 = main.querySelector('h1');
-  const top = main.querySelector('[data-view-name="profile-top-card"]')
-           || (h1 && h1.closest('section')) || main;
-  const titleName = (document.title || '').split(' | ')[0].replace(/^\\(\\d+\\)\\s*/, '').trim();
-  const heads = [...top.querySelectorAll('h1, h2')].map(h => h.innerText.trim()).filter(Boolean);
-  const name = heads.find(h => h === titleName) || (h1 && h1.innerText.trim()) || titleName;
-  const lines = top.innerText.split('\\n').map(s => s.trim()).filter(Boolean);
+() => {""" + _FIND_TOP_JS + """
+  top = top || main;
+  const name = nameEl ? nameEl.innerText.trim() : titleName;
+  // skip the "· 1st" connection-degree line and lone separators
+  const lines = top.innerText.split('\\n').map(s => s.trim())
+    .filter(s => s && !/^·?\\s*(·|1st|2nd|3rd\\+?)?$/.test(s));
   const legacy = top.querySelector('.text-body-medium');
   const i = lines.indexOf(name);
   const headline = legacy ? legacy.innerText.trim() : (i >= 0 && lines[i + 1]) || '';
@@ -207,8 +217,7 @@ class LinkedIn:
     def profile(self, slug: str) -> dict:
         page = self._goto(profile_url(slug))
         try:
-            # "attached", not "visible": the top-card wrapper is display:contents and has no box
-            page.wait_for_selector(PROFILE_READY, state="attached", timeout=20000)
+            page.wait_for_function(PROFILE_READY_JS, timeout=20000)
         except PWTimeout:
             reason = _blocked_url(page.url)
             if reason:
