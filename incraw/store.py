@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS items_slug ON items(slug);
 CREATE TABLE IF NOT EXISTS page_loads (day TEXT PRIMARY KEY, n INTEGER NOT NULL);
 """
 
-FINISHED = ("open", "likely", "not_detected", "unavailable")
+FINISHED = ("open", "likely", "not_detected")  # results worth reusing
 
 
 class Store:

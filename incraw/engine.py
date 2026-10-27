@@ -208,6 +208,11 @@ class Engine:
             self.store.update(item_id, status="unavailable", note=str(e), checked_at=time.time())
             return
         self.session = "logged_in"
+        # keep the raw top card so detection can be checked against what LinkedIn really sent
+        snapshots = self.s.data_dir / "snapshots"
+        snapshots.mkdir(parents=True, exist_ok=True)
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in slug)
+        (snapshots / f"{safe}.html").write_text(snap.pop("topHtml", ""), encoding="utf-8")
         d = detect.detect(snap)
         self.store.update(
             item_id, slug=snap.get("slug") or slug, status=d.status, profile_name=snap.get("name", ""),

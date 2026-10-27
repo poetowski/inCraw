@@ -2,7 +2,8 @@
 
 Works on a plain snapshot dict (see linkedin.EXTRACT_PROFILE_JS) so it can be
 tested without a browser:
-    {"name", "headline", "imgAlts": [...], "topText": "...", "url"}
+    {"name", "headline", "imgAlts": [...], "imgSrcs": [...], "viewNames": [...],
+     "topText": "...", "url"}
 """
 from __future__ import annotations
 
@@ -17,6 +18,11 @@ NOT_DETECTED = "not_detected"  # nothing public (could still be "recruiters only
 
 FRAME_RE = re.compile(r"#\s*open\s*to\s*work", re.IGNORECASE)
 HIRING_RE = re.compile(r"#\s*hiring", re.IGNORECASE)
+# LinkedIn bakes a photo frame into the image and serves it as "framedphoto".
+# The only frames it offers are #OpenToWork and #Hiring.
+FRAMED_SRC_RE = re.compile(r"profile-framedphoto", re.IGNORECASE)
+OTW_VIEW_RE = re.compile(r"open-?to-?work", re.IGNORECASE)
+HIRING_VIEW_RE = re.compile(r"hiring", re.IGNORECASE)
 CARD_LINE_RE = re.compile(r"^open to work$", re.IGNORECASE)
 
 HEADLINE_PATTERNS = [
@@ -61,12 +67,21 @@ def _norm(s: str) -> str:
 def detect(snapshot: dict) -> Detection:
     signals: list[Signal] = []
     roles = ""
+    alts = [_norm(a) for a in snapshot.get("imgAlts") or []]
+    views = snapshot.get("viewNames") or []
+    hiring = any(HIRING_RE.search(a) for a in alts) or any(HIRING_VIEW_RE.search(v) for v in views)
 
-    for alt in snapshot.get("imgAlts") or []:
-        alt = _norm(alt)
+    for alt in alts:
         if FRAME_RE.search(alt):
             signals.append(Signal("photo_frame", "strong", alt[:200]))
             break
+    else:
+        if any(FRAMED_SRC_RE.search(s) for s in snapshot.get("imgSrcs") or []) and not hiring:
+            signals.append(Signal("photo_frame", "strong", "framed profile photo (#OpenToWork)"))
+
+    otw_views = [v for v in views if OTW_VIEW_RE.search(v)]
+    if otw_views:
+        signals.append(Signal("profile_card", "strong", f"page marker {otw_views[0]}"))
 
     lines = [_norm(l) for l in (snapshot.get("topText") or "").splitlines()]
     lines = [l for l in lines if l]
@@ -75,7 +90,8 @@ def detect(snapshot: dict) -> Detection:
             roles = lines[i + 1] if i + 1 < len(lines) else ""
             if roles.lower().startswith(("show details", "see all details")):
                 roles = ""
-            signals.append(Signal("profile_card", "strong", f"Open to work: {roles}".strip(": ")))
+            if not otw_views:
+                signals.append(Signal("profile_card", "strong", f"Open to work: {roles}".strip(": ")))
             break
 
     headline = _norm(snapshot.get("headline", ""))
@@ -83,10 +99,8 @@ def detect(snapshot: dict) -> Detection:
     if m:
         signals.append(Signal("headline", "weak", f"“{m.group(0).strip()}” in headline"))
 
-    for alt in snapshot.get("imgAlts") or []:
-        if HIRING_RE.search(alt or ""):
-            signals.append(Signal("hiring", "info", "#HIRING photo frame (recruiting, not job-seeking)"))
-            break
+    if hiring:
+        signals.append(Signal("hiring", "info", "#Hiring on profile (recruiting, not job-seeking)"))
 
     if any(s.strength == "strong" for s in signals):
         status = OPEN

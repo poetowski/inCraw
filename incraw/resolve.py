@@ -37,7 +37,7 @@ def _clean_name(line: str) -> str:
 
 def parse_result(raw: dict) -> tuple[str, str]:
     lines = [l.strip() for l in (raw.get("text") or "").splitlines() if l.strip()]
-    lines = [l for l in lines if not re.match(r"^(•\s*)?(1st|2nd|3rd\+?)$|^(Connect|Follow|Message)$", l)]
+    lines = [l for l in lines if not re.match(r"^(•\s*)?(1st|2nd|3rd\+?|You)$|^(Connect|Follow|Message)$", l)]
     name = _clean_name(lines[0]) if lines else ""
     rest = [l for l in lines[1:] if _clean_name(l) != name and not l.lower().startswith("view ")]
     return name, " · ".join(rest[:3])

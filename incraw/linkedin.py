@@ -19,26 +19,36 @@ from .inputs import profile_url, slug_from_url
 LOGIN_URL = "https://www.linkedin.com/login"
 FEED_URL = "https://www.linkedin.com/feed/"
 
+# Class names are generated and change constantly; data-view-name attributes
+# and the page title are what stays put (2026 layout: name is an h2, the
+# photo's alt is empty). The older h1 / .text-body-medium layout is kept as a
+# fallback.
+TOP_CARD = '[data-view-name="profile-top-card"]'
+PROFILE_READY = f'{TOP_CARD}, main h1'
+
 EXTRACT_PROFILE_JS = """
 () => {
   const main = document.querySelector('main') || document.body;
   const h1 = main.querySelector('h1');
-  const top = (h1 && h1.closest('section')) || main;
-  let headline = '';
-  const hl = top.querySelector('.text-body-medium');
-  if (hl) headline = hl.innerText.trim();
-  else if (h1) {
-    // fallback: first non-empty line after the name in the top card
-    const lines = top.innerText.split('\\n').map(s => s.trim()).filter(Boolean);
-    const i = lines.indexOf(h1.innerText.trim());
-    if (i >= 0 && lines[i + 1]) headline = lines[i + 1];
-  }
+  const top = main.querySelector('[data-view-name="profile-top-card"]')
+           || (h1 && h1.closest('section')) || main;
+  const titleName = (document.title || '').split(' | ')[0].replace(/^\\(\\d+\\)\\s*/, '').trim();
+  const heads = [...top.querySelectorAll('h1, h2')].map(h => h.innerText.trim()).filter(Boolean);
+  const name = heads.find(h => h === titleName) || (h1 && h1.innerText.trim()) || titleName;
+  const lines = top.innerText.split('\\n').map(s => s.trim()).filter(Boolean);
+  const legacy = top.querySelector('.text-body-medium');
+  const i = lines.indexOf(name);
+  const headline = legacy ? legacy.innerText.trim() : (i >= 0 && lines[i + 1]) || '';
+  const imgs = [...top.querySelectorAll('img')];
   return {
     url: location.href,
-    name: h1 ? h1.innerText.trim() : '',
+    name,
     headline,
-    imgAlts: [...top.querySelectorAll('img')].map(i => i.alt || '').filter(Boolean).slice(0, 30),
+    imgAlts: imgs.map(i => i.alt || '').filter(Boolean).slice(0, 30),
+    imgSrcs: imgs.map(i => i.currentSrc || i.src || '').filter(Boolean).slice(0, 30),
+    viewNames: [...new Set([...top.querySelectorAll('[data-view-name]')].map(e => e.getAttribute('data-view-name')))],
     topText: top.innerText.slice(0, 5000),
+    topHtml: top.outerHTML.slice(0, 300000),
   };
 }
 """
@@ -148,13 +158,17 @@ class LinkedIn:
         if "/login" not in page.url and "/checkpoint/" not in page.url:
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
         page.bring_to_front()
+        # watch the session cookie, not one tab: the user may close the tab,
+        # sign in through a Google pop-up, or land somewhere other than /feed
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if on_wait:
                 on_wait()
-            if self._on_feed(page):
+            if self._ctx is None:
+                return False  # the whole Chrome window was closed
+            if self.logged_in():
                 return True
-            page.wait_for_timeout(1500)
+            time.sleep(1.5)
         return False
 
     @staticmethod
@@ -162,7 +176,8 @@ class LinkedIn:
         return "/feed" in page.url and _blocked_url(page.url) is None
 
     def logged_in(self) -> bool:
-        self.open()
+        if self._ctx is None:
+            self.open()
         return any(c["name"] == "li_at" and c["value"] for c in self._ctx.cookies("https://www.linkedin.com"))
 
     # -- navigation ------------------------------------------------------
@@ -192,7 +207,8 @@ class LinkedIn:
     def profile(self, slug: str) -> dict:
         page = self._goto(profile_url(slug))
         try:
-            page.wait_for_selector("main h1", timeout=20000)
+            # "attached", not "visible": the top-card wrapper is display:contents and has no box
+            page.wait_for_selector(PROFILE_READY, state="attached", timeout=20000)
         except PWTimeout:
             reason = _blocked_url(page.url)
             if reason:
