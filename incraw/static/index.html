@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inCraw</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #667080; --line: #e3e6ea;
+    --accent: #0a66c2; --accent-text: #fff;
+    --open: #1f8f4e; --open-bg: #e3f5ea; --likely: #9a6400; --likely-bg: #fdf1d8;
+    --none: #5d6673; --none-bg: #eef0f3; --pend: #0a66c2; --pend-bg: #e4effa;
+    --warn: #7a3fb8; --warn-bg: #f1e8fb; --bad: #b4232c; --bad-bg: #fbe6e7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --panel: #1a1e24; --text: #e6e9ee; --muted: #929aa6; --line: #2b313a;
+      --accent: #3d8be0; --open: #5fd18f; --open-bg: #183224; --likely: #e9b55a; --likely-bg: #352a14;
+      --none: #a3abb7; --none-bg: #252a32; --pend: #7db5f0; --pend-bg: #172a40;
+      --warn: #c59cf2; --warn-bg: #2c2140; --bad: #f28b91; --bad-bg: #3a1c1f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+           padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0 12px 0 0; font-size: 18px; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+  .pill { padding: 3px 10px; border-radius: 999px; background: var(--none-bg); color: var(--muted); font-size: 12.5px; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .pill.ok b { color: var(--open); } .pill.bad b { color: var(--bad); }
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 60px; display: grid; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .banner { display: none; border-radius: 10px; padding: 12px 16px; background: var(--likely-bg); color: var(--likely);
+            border: 1px solid color-mix(in srgb, var(--likely) 30%, transparent); }
+  .banner.show { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .banner span { flex: 1; min-width: 200px; }
+  textarea { width: 100%; min-height: 130px; resize: vertical; padding: 10px 12px; border-radius: 8px;
+             border: 1px solid var(--line); background: var(--bg); color: var(--text);
+             font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  button, select, a.btn { font: inherit; border-radius: 7px; border: 1px solid var(--line); background: var(--panel);
+            color: var(--text); padding: 6px 12px; cursor: pointer; text-decoration: none; }
+  button:hover, a.btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.small { padding: 2px 8px; font-size: 12.5px; }
+  label.chk { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .toolbar .spacer { flex: 1; }
+  .counts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase;
+       letter-spacing: .4px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.person a { color: var(--text); font-weight: 600; text-decoration: none; }
+  td.person a:hover { color: var(--accent); text-decoration: underline; }
+  .sub { color: var(--muted); font-size: 12.5px; }
+  .badge { display: inline-block; white-space: nowrap; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .s-open { color: var(--open); background: var(--open-bg); }
+  .s-likely { color: var(--likely); background: var(--likely-bg); }
+  .s-not_detected { color: var(--none); background: var(--none-bg); }
+  .s-queued, .s-running { color: var(--pend); background: var(--pend-bg); }
+  .s-ambiguous { color: var(--warn); background: var(--warn-bg); }
+  .s-not_found, .s-unavailable, .s-error { color: var(--bad); background: var(--bad-bg); }
+  .s-running::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%;
+                       background: currentColor; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  ul.signals { margin: 0; padding-left: 16px; }
+  ul.signals li.weak { color: var(--likely); } ul.signals li.info { color: var(--muted); }
+  .cands { margin-top: 6px; display: grid; gap: 6px; }
+  .cand { display: flex; gap: 8px; align-items: baseline; }
+  .cand a { color: var(--accent); }
+  .empty { text-align: center; color: var(--muted); padding: 30px 0; }
+  details.help summary { cursor: pointer; color: var(--muted); }
+  details.help p, details.help li { color: var(--muted); font-size: 13px; }
+  main > * { min-width: 0; }
+  @media (max-width: 700px) {
+    header { padding: 12px 16px; } header .pills { order: 3; flex-basis: 100%; }
+    main { padding: 16px 16px 40px; }
+    table { min-width: 0; } thead { display: none; }
+    tr { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    tr:last-child { border-bottom: 0; }
+    td { padding: 0; border: 0; } td.st { text-align: right; }
+    td.sig, td.hl, td.act { grid-column: 1 / -1; }
+    td:empty { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>in<span>Craw</span></h1>
+  <div class="pills" id="pills"></div>
+  <button id="btnLogin">Log in to LinkedIn</button>
+  <button id="btnPause">Pause</button>
+</header>
+
+<main>
+  <div class="banner" id="banner"><span id="bannerText"></span><button id="btnResume">Resume</button></div>
+
+  <section class="card">
+    <textarea id="input" placeholder="One person per line:
+https://www.linkedin.com/in/some-profile/
+Jan Kowalski, Allegro
+Anna Nowak
+
+…or paste a CSV with url / name / company columns"></textarea>
+    <div class="row">
+      <button class="primary" id="btnCheck">Check</button>
+      <label class="chk"><input type="checkbox" id="force"> Re-check even if checked recently</label>
+      <span class="hint" id="msg"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <select id="batch"></select>
+      <div class="counts" id="counts"></div>
+      <span class="spacer"></span>
+      <a class="btn" id="export" href="/api/export.csv">Export CSV</a>
+      <button id="btnDelete" title="Remove this batch from the list">Delete batch</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:24%">Person</th><th style="width:12%">Status</th><th style="width:30%">Signals</th><th>Headline</th><th style="width:90px"></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="help card">
+    <summary>What the statuses mean</summary>
+    <ul>
+      <li><b>Open to work</b>: LinkedIn shows the #OpenToWork photo frame or the "Open to work" card to all members.</li>
+      <li><b>Likely</b>: the person says so in their headline ("looking for new opportunities", "otwarty na oferty"…), but hasn't turned on LinkedIn's own flag publicly.</li>
+      <li><b>Not detected</b>: nothing public. The person may still be "Open to work" for <i>recruiters only</i>, which only LinkedIn Recruiter seats can see.</li>
+      <li><b>Ambiguous</b>: several people match a name. Pick the right one to check it.</li>
+    </ul>
+    <p>Checks run one at a time with a random 8–20 s pause and a daily limit, so your account looks like a person browsing. Results less than 7 days old are reused.</p>
+  </details>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const LABEL = { open: "Open to work", likely: "Likely", not_detected: "Not detected", queued: "Queued",
+  running: "Checking", ambiguous: "Ambiguous", not_found: "Not found", unavailable: "Unavailable", error: "Error" };
+let currentBatch = "", lastItemsJson = "";
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || r.statusText), { data });
+  return data;
+}
+const post = (path, body = {}) => api(path, { method: "POST", body: JSON.stringify(body) });
+
+function ago(ts) {
+  if (!ts) return "";
+  const s = Date.now() / 1000 - ts;
+  if (s < 90) return "just now";
+  if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 129600) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " d ago";
+}
+
+async function refreshStatus() {
+  const st = await api("/api/status");
+  const sess = { logged_in: ["ok", "logged in"], logged_out: ["bad", "logged out"], unknown: ["", "not checked yet"] }[st.session];
+  const stateText = st.state === "running" ? `checking (${st.queued} queued)` : st.state === "login" ? "waiting for login" :
+                    st.state === "paused" ? "paused" : st.queued ? `${st.queued} queued` : "idle";
+  $("#pills").innerHTML =
+    `<span class="pill ${sess[0]}">LinkedIn <b>${sess[1]}</b></span>` +
+    `<span class="pill">Worker <b>${esc(stateText)}</b></span>` +
+    `<span class="pill">Today <b>${st.loads_today} / ${st.daily_cap}</b> pages</span>`;
+  const showBanner = st.state === "paused" || st.state === "login";
+  $("#banner").classList.toggle("show", showBanner);
+  $("#bannerText").textContent = st.message || (st.state === "paused" ? "Paused" : "");
+  const needLogin = st.state === "paused" && st.session === "logged_out";
+  $("#btnResume").style.display = st.state === "paused" ? "" : "none";
+  $("#btnResume").textContent = needLogin ? "Log in" : "Resume";
+  $("#btnResume").dataset.action = needLogin ? "login" : "resume";
+  $("#btnPause").disabled = st.state === "paused";
+}
+
+async function refreshBatches(selectNewest = false) {
+  const bs = await api("/api/batches");
+  const sel = $("#batch");
+  if (selectNewest && bs.length) currentBatch = bs[0].batch;
+  if (!currentBatch && bs.length) currentBatch = bs[0].batch;
+  sel.innerHTML = bs.length ? bs.map(b =>
+    `<option value="${esc(b.batch)}" ${b.batch === currentBatch ? "selected" : ""}>${esc(b.batch)} · ${b.n} people${b.pending ? " · running" : ""}</option>`
+  ).join("") : `<option value="">No checks yet</option>`;
+  $("#export").href = "/api/export.csv" + (currentBatch ? "?batch=" + encodeURIComponent(currentBatch) : "");
+  $("#btnDelete").disabled = !currentBatch;
+}
+
+function signalsHtml(it) {
+  if (it.status === "ambiguous") {
+    return `<div class="sub">${esc(it.note)}</div><div class="cands">` + it.candidates.map(c =>
+      `<div class="cand"><button class="small" data-pick="${it.id}" data-slug="${esc(c.slug)}">Check</button>
+       <div><a href="https://www.linkedin.com/in/${encodeURIComponent(c.slug)}/" target="_blank" rel="noopener">${esc(c.name)}</a>
+       <div class="sub">${esc(c.subtitle)}</div></div></div>`).join("") + `</div>`;
+  }
+  const lis = it.signals.map(s => `<li class="${s.strength}">${esc(s.evidence)}</li>`).join("");
+  const note = it.note && it.note !== "force" ? `<div class="sub">${esc(it.note)}</div>` : "";
+  return (lis ? `<ul class="signals">${lis}</ul>` : "") + note;
+}
+
+function rowHtml(it) {
+  const name = it.profile_name || it.query_name || it.raw;
+  const person = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(name)}</a>` : `<b>${esc(name)}</b>`;
+  const sub = it.kind === "name" && it.profile_name ? `searched: ${it.raw}` : it.query_company;
+  const when = it.checked_at ? ago(it.checked_at) + (it.from_cache ? " (cached)" : "") : "";
+  const canRetry = !["queued", "running"].includes(it.status);
+  return `<tr>
+    <td class="person">${person}${sub ? `<div class="sub">${esc(sub)}</div>` : ""}${when ? `<div class="sub">${esc(when)}</div>` : ""}</td>
+    <td class="st"><span class="badge s-${it.status}">${LABEL[it.status] || esc(it.status)}</span></td>
+    <td class="sig">${signalsHtml(it)}</td>
+    <td class="hl sub">${esc(it.headline)}</td>
+    <td class="act">${canRetry ? `<button class="small" data-retry="${it.id}">Re-check</button>` : ""}</td>
+  </tr>`;
+}
+
+async function refreshItems() {
+  if (!currentBatch) { $("#rows").innerHTML = `<tr><td colspan="5" class="empty">Paste people above and press Check.</td></tr>`; $("#counts").innerHTML = ""; return; }
+  const items = await api("/api/items?batch=" + encodeURIComponent(currentBatch));
+  const json = JSON.stringify(items);
+  if (json === lastItemsJson) { return; }
+  lastItemsJson = json;
+  $("#rows").innerHTML = items.map(rowHtml).join("") || `<tr><td colspan="5" class="empty">Empty batch.</td></tr>`;
+  const c = {};
+  items.forEach(i => c[i.status] = (c[i.status] || 0) + 1);
+  $("#counts").innerHTML = Object.keys(LABEL).filter(k => c[k]).map(k =>
+    `<span class="badge s-${k}">${LABEL[k]} ${c[k]}</span>`).join("");
+}
+
+async function tick() {
+  try { await refreshStatus(); await refreshItems(); } catch (e) { /* server restarting */ }
+}
+
+$("#btnCheck").onclick = async () => {
+  const text = $("#input").value;
+  try {
+    const r = await post("/api/check", { text, force: $("#force").checked });
+    $("#msg").textContent = `Queued ${r.count} ${r.count === 1 ? "person" : "people"}` +
+      (r.rejected.length ? ` · skipped ${r.rejected.length} unreadable line(s): ${r.rejected.slice(0, 3).join(" | ")}` : "");
+    $("#input").value = "";
+    lastItemsJson = "";
+    await refreshBatches(true); await tick();
+  } catch (e) { $("#msg").textContent = e.message; }
+};
+$("#batch").onchange = e => { currentBatch = e.target.value; lastItemsJson = ""; refreshBatches(); refreshItems(); };
+$("#btnLogin").onclick = () => post("/api/login").then(tick);
+$("#btnPause").onclick = () => post("/api/pause").then(tick);
+$("#btnResume").onclick = e => post("/api/" + (e.target.dataset.action || "resume")).then(tick);
+$("#btnDelete").onclick = async () => {
+  if (!currentBatch || !confirm(`Delete batch ${currentBatch}?`)) return;
+  await api("/api/batches/" + encodeURIComponent(currentBatch), { method: "DELETE" });
+  currentBatch = ""; lastItemsJson = ""; await refreshBatches(); await refreshItems();
+};
+$("#rows").onclick = async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.pick) await post(`/api/items/${b.dataset.pick}/pick`, { slug: b.dataset.slug });
+  if (b.dataset.retry) await post(`/api/items/${b.dataset.retry}/retry`);
+  lastItemsJson = ""; tick();
+};
+
+refreshBatches().then(tick);
+setInterval(tick, 2000);
+setInterval(refreshBatches, 10000);
+</script>
+</body>
+</html>
